@@ -1,45 +1,65 @@
-import streamlit as st
-from groq import Groq
+# # Function Calling with OpenAI APIs
+
 import os
-import requests
-from dotenv import load_dotenv
+import openai
 import json
+import requests
+import streamlit as st
+from dotenv import load_dotenv
 
 load_dotenv()
 
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY"),
-)
-MODEL = "llama3-8b-8192"
-api_key = os.getenv("OPENWEATHERMAP_API_KEY")
+# set openai api key
+openai.api_key = os.environ['OPENAI_API_KEY']
+OPENWEATHER_API_KEY = os.environ['OPENWEATHERMAP_API_KEY']
 
-def get_current_weather(location, unit):
-    url = f"https://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units={unit}"
-    response = requests.get(url)
+
+# ### Define Dummy Function
+
+# Defines a dummy function to get the current weather
+def get_current_weather(location):
+    """Get the current weather in a given location"""
+
+    base_url = "http://api.openweathermap.org/data/2.5/weather?"
+    complete_url = f"{base_url}appid={OPENWEATHER_API_KEY}&q={location}"
+
+    response = requests.get(complete_url)
+
     if response.status_code == 200:
         data = response.json()
-        print (f"this is the current weather\n {data['main']}")
-        return json.dumps(data['main']['temp'])
+        weather = data['weather'][0]['main']
+        temperature = data['main']['temp'] - 273.15  # Convert Kelvin to Celsius
+        return json.dumps({
+            "city": location,
+            "weather": weather,
+            "temperature": round(temperature, 2)
+        })
     else:
-        return (f"Error: {response.status_code} - {response.reason}\n {response.content}")
+        return json.dumps({"city": location, "weather": "Data Fetch Error", "temperature": "N/A"})
 
 
+
+# ### Define Functions
+# 
+# As demonstrated in the OpenAI documentation, here is a simple example of how to define the functions that are going to be part of the request. 
+# 
+# The descriptions are important because these are passed directly to the LLM and the LLM will use the description to determine whether to use the functions or how to use/call.
+
+
+
+# define a function as tools
 tools = [
-        {
+    {
         "type": "function",
         "function": {
             "name": "get_current_weather",
-            "description": "Get the current weather in a given location everytime",
+            "description": "Get the current weather in a given location",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {
                         "type": "string",
                         "description": "The city and state, e.g. San Francisco, CA",
-                    },
-                    "unit": {
-                        "type": "string", 
-                        "enum": ["metric", "imperial"]
                     },
                 },
                 "required": ["location"],
@@ -49,94 +69,49 @@ tools = [
 ]
 
 
-st.title("💬 Weather Chatbot")
-st.caption("🚀 A streamlit chatbot powered by Llama LLM")
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [
-        {
-            "role": "system",
-            "content": "You are a function calling LLM that uses a function to get the current weather (in metric) in a city in json and answers user's questions, everytime the user asks a Location, you call the API and Use the response from the API. Use only the Information recieved from the Json and do not hallucinate.",
-        }, 
-        {
-            "role": "assistant", 
-            "content": "How can I help you?"
-            }
-        ]
+response = openai.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+    {
+        "role": "user",
+        "content": "What is the weather in {location}?"
+    }],
+    temperature=0,
+    max_tokens=300,
+    tools=tools,
+    tool_choice="auto"
+)
 
-for msg in st.session_state.messages:
-    if not msg["role"]=="system":
-        st.chat_message(msg["role"]).write(msg["content"])
+openai_response = response.choices[0].message
 
-def complete_chat(message, messages, tools):
 
-    messages.append(
-        {
-            "role": "user",
-            "content": message,
-        }
-    )
+# response.tool_calls[0].function.arguments
 
-    chat_completion = client.chat.completions.create(
-        model="llama3-8b-8192",
-        messages=messages,
-        tool_choice="auto",
-        tools=tools,
-        max_tokens=2048,
-    )
-    
-    tool_calls = chat_completion.choices[0].message.tool_calls
+# We can now capture the arguments:
 
-    if tool_calls:
-        process_tool_calls(tool_calls, messages)
 
-    messages.append({"role": "assistant", "content": chat_completion.choices[0].message.content})
+args = json.loads(openai_response.tool_calls[0].function.arguments)
+print(args)
 
-    return chat_completion.choices[0].message.content
+print("output")
+print(get_current_weather(**args))
 
-def process_tool_calls(tool_calls, messages):
-    available_functions = {
-        "get_current_weather": get_current_weather     
-    }
-    for tool in tool_calls:
-            function_name = tool.function.name
-            function_to_call = available_functions[function_name]
-            function_params = json.loads(tool.function.arguments)
-            function_response = function_to_call(
-                location = function_params.get("location"),
-                unit =  "metric",
-            )
-            messages.append(
-                {
-                    "tool_call_id": tool.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": function_response,
-                }
-            ) 
+# Task: Put this into another LLM call and return the response in text format
 
-            second_response = client.chat.completions.create(
-                model=MODEL,
-                messages=messages
-            )
-            messages.append(
-                {
-                "role": "assistant",
-                "content": second_response.choices[0].message.content,
-                }
-            )
-            return second_response.choices[0].message.content
+st.title('Weather Checker')
+
+# Input for location
+location = st.text_input('Enter a location (e.g., "Delhi, India")')
+
+# Button to fetch weather
+if st.button('Get Weather'):
+    if location:
+        weather_info = get_current_weather(location)
+        weather_data = json.loads(weather_info)
+        if weather_data['weather'] != "Data Fetch Error":
+            st.write(f"Weather: {weather_data['weather']}")
+            st.write(f"Temperature: {weather_data['temperature']}°C")
+        else:
+            st.error("Failed to fetch weather data.")
     else:
-        messages.append(
-            {
-                "role": "assistant",
-                "content": chat_completion.choices[0].message.content,
-            }
-        )
-        return chat_completion.choices[0].message.content
-    
-
-
-if prompt := st.chat_input():
-    st.chat_message("user").write(prompt)
-    msg = complete_chat(prompt, st.session_state.messages, tools)
-    st.chat_message("assistant").write(msg)
+        st.error("Please enter a valid location.")
