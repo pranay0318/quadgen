@@ -66,10 +66,10 @@ def mock_agent_executor(query):
     return (response)
 
 # Streamlit Set up the page
-st.title("Langchain Chat Interface")
+st.title("Langchain Simple Agent")
 
 # Create a text area for user input
-user_input = st.text_input("Ask me anything about Langsmith:", "")
+user_input = st.text_input("Ask me anything about Langsmith/ from Wikipedia/ from Arxiv:", "")
 
 # Button to send the input to the function
 if st.button("Send"):
