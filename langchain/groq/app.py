@@ -20,7 +20,7 @@ groq_api_key=os.environ['GROQ_API_KEY']
 
 # Creating Vector embeddings for the session
 
-if "vector" not in st.session_state:
+if "vectors" not in st.session_state:
     st.session_state.embeddings=OpenAIEmbeddings()
     st.session_state.loader=WebBaseLoader("https://docs.smith.langchain.com/")
     st.session_state.docs=st.session_state.loader.load()
